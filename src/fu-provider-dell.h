@@ -102,8 +102,15 @@ struct dock_count_out {
 /* Dock Info version 1 */
 #pragma pack(1)
 #define MAX_COMPONENTS 5
+typedef struct _DOCK_DESCRIPTION
+{
+	const efi_guid_t	guid;
+	const gchar *		query;
+	const gchar *		desc;
+} DOCK_DESCRIPTION;
+
 typedef struct _COMPONENTS {
-	guint8		description[80];
+	gchar		description[80];
 	guint32		fw_version; 		/* BCD format: 0x00XXYYZZ */
 } COMPONENTS;
 
@@ -155,13 +162,29 @@ typedef enum _CABLE_TYPE
 #define DACI_DOCK_ARG_INFO		1
 
 /* These are for matching the components */
-#define WD15_EC		"2 0 2 2 0"
-#define TB15_EC		"2 0 2 1 0"
-#define TB15_PC_2	"2 1 0 1 1"
-#define TB15_PC_1	"2 1 0 1 0"
-#define WD15_PC_1	"2 1 0 2 0"
-#define LEGACY_CABLE	"2 2 2 1 0"
-#define OTHER_CABLE	"2 2 2 2 0"
-#define TBT_CABLE	"2 2 2 3 0"
+#define WD15_EC_STR		"2 0 2 2 0"
+#define TB15_EC_STR		"2 0 2 1 0"
+#define TB15_PC2_STR		"2 1 0 1 1"
+#define TB15_PC1_STR		"2 1 0 1 0"
+#define WD15_PC1_STR		"2 1 0 2 0"
+#define LEGACY_CBL_STR		"2 2 2 1 0"
+#define OTHER_CBL_STR		"2 2 2 2 0"
+#define TBT_CBL_STR		"2 2 2 3 0"
+
+#define WD15_EC_GUID		EFI_GUID (0xE8445370, 0x0211, 0x449D, 0x9FAA, 0x10, 0x79, 0x06, 0xAB, 0x18, 0x9F)
+#define TB15_EC_GUID		EFI_GUID (0x33CC8870, 0xB1FC, 0x4EC7, 0x948A, 0xC0, 0x74, 0x96, 0x87, 0x4F, 0xAF)
+#define TB15_PC2_GUID		EFI_GUID (0x1B52C630, 0x86F6, 0x4AEE, 0x9F0C, 0x47, 0x4D, 0xC6, 0xBE, 0x49, 0xB6)
+#define TB15_PC1_GUID		EFI_GUID (0x8FE183DA, 0xC94E, 0x4804, 0xB319, 0x0F, 0x1B, 0xA5, 0x45, 0x7A, 0x69)
+#define WD15_PC1_GUID		EFI_GUID (0x8BA2B709, 0x6F97, 0x47FC, 0xB7E7, 0x6A, 0x87, 0xB5, 0x78, 0xFE, 0x25)
+#define LEGACY_CBL_GUID		EFI_GUID (0xFECE1537, 0xD683, 0x4EA8, 0xB968, 0x15, 0x45, 0x30, 0xBB, 0x6F, 0x73)
+#define OTHER_CBL_GUID		EFI_GUID (0xE2BF3AAD, 0x61A3, 0x44BF, 0x91EF, 0x34, 0x9B, 0x39, 0x51, 0x5D, 0x29)
+#define TBT_CBL_GUID		EFI_GUID (0x6DC832FC, 0x5BB0, 0x4E63, 0xA2FF, 0x02, 0xAA, 0xBA, 0x5B, 0xC1, 0xDC)
+
+#define EC_DESC			"EC"
+#define PC1_DESC		"Port Controller 1"
+#define PC2_DESC		"Port Controller 2"
+#define LEGACY_CBL_DESC		"Passive Cable"
+#define OTHER_CBL_DESC		"Other Cable"
+#define TBT_CBL_DESC		"Thunderbolt Cable"
 
 #endif /* __FU_PROVIDER_DELL_H */

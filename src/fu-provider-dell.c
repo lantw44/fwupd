@@ -40,7 +40,6 @@
 
 static void	fu_provider_dell_finalize	(GObject	*object);
 
-
  /**
   * FuProviderDellPrivate:
   **/
@@ -70,6 +69,37 @@ fu_provider_dell_get_name (FuProvider *provider)
 }
 
 /**
+ * fu_provider_dell_match_dock_component:
+ **/
+static gboolean
+fu_provider_dell_match_dock_component(const gchar *query_str,
+				 const efi_guid_t **guid_out,
+				 const gchar **name_out)
+{
+	guint i;
+	const DOCK_DESCRIPTION list[] = {
+		{WD15_EC_GUID, WD15_EC_STR, EC_DESC},
+		{TB15_EC_GUID, TB15_EC_STR, EC_DESC},
+		{WD15_PC1_GUID, WD15_PC1_STR, PC1_DESC},
+		{TB15_PC1_GUID, TB15_PC1_STR, PC1_DESC},
+		{TB15_PC2_GUID, TB15_PC2_STR, PC2_DESC},
+		{TBT_CBL_GUID, TBT_CBL_STR, TBT_CBL_DESC},
+		{OTHER_CBL_GUID, OTHER_CBL_STR, OTHER_CBL_DESC},
+		{LEGACY_CBL_GUID, LEGACY_CBL_STR, LEGACY_CBL_DESC},
+	};
+
+	for (i = 0; i < G_N_ELEMENTS(list); i++) {
+		if (g_strcmp0 (query_str,
+			       list[i].query) == 0) {
+			*guid_out = &list[i].guid;
+			*name_out = list[i].desc;
+			return TRUE;
+		}
+	}
+	return FALSE;
+}
+
+/*
  * fu_provider_dell_inject_fake_data:
  **/
 void
@@ -240,8 +270,9 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 	AsVersionParseFlag parse_flags;
 	guint16 pid;
 	guint16 vid;
-	const gchar *dock_guid;
+	const gchar *query_str;
 	const gchar *dock_type = "";
+	const gchar *component_name = NULL;
 	INFO_UNION buf;
 	DOCK_INFO *dock_info;
 	guint buf_size;
@@ -249,8 +280,11 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 	gint result;
 	gint i;
 	guint32 location;
-	g_autofree gchar *fw_version_str = NULL;
+	const efi_guid_t *guid_raw = NULL;
+
 	g_autofree gchar *dock_key = NULL;
+	g_autofree gchar *fw_str = NULL;
+	g_autofree gchar *guid_str = NULL;
 	g_autofree gchar *dock_id = NULL;
 	g_autofree gchar *dock_name = NULL;
 
@@ -314,6 +348,7 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 		default:
 			g_debug ("Dell: Dock type %d unknown",
 				 buf.record->dock_info_header.dock_type);
+			return;
 	}
 
 	dock_info = &buf.record->dock_info;
@@ -332,47 +367,67 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 		g_debug ("Dell: dock component %d: %s (version 0x%x)", i,
 			 dock_info->components[i].description,
 			 dock_info->components[i].fw_version);
+		query_str = g_strrstr (dock_info->components[i].description,
+				       "Query ") + 6;
+		if (!fu_provider_dell_match_dock_component (query_str, &guid_raw,
+							    &component_name)) {
+			g_debug("Dell: unable to match dock component %s",
+				query_str);
+			return;
+		}
+
+		guid_str = g_strdup ("00000000-0000-0000-0000-000000000000");
+		if (efi_guid_to_str (guid_raw, &guid_str) < 0) {
+			g_debug ("Dell: Failed to convert GUID.");
+			return;
+		}
+		dock_key = fu_provider_dell_get_dock_key (device, guid_str);
+		item = g_hash_table_lookup (priv->devices, dock_key);
+		if (item != NULL) {
+			g_debug ("Dell: Item %s is already registered.",
+				 dock_key);
+			return;
+		}
+
+		item = g_new0 (FuProviderDellDockItem, 1);
+		item->provider_dell = g_object_ref (provider_dell);
+		item->usb_device = g_object_ref (device);
+		item->device = fu_device_new();
+		dock_id = g_strdup_printf ("DELL-%s" G_GUINT64_FORMAT, guid_str);
+		dock_name = g_strdup_printf ("Dell %s %s", dock_type,
+					     component_name);
+		fu_device_set_id (item->device, dock_id);
+		fu_device_set_name (item->device, dock_name);
+		fu_device_add_guid (item->device, guid_str);
+		fu_device_add_flag(item->device, FU_DEVICE_FLAG_REQUIRE_AC);
+
+		/* Dock EC hasn't been updated yet */
+		if (dock_info->flash_pkg_version == 0x00ffffff) {
+			g_debug ("Dell: dock flash package version %x invalid",
+				 dock_info->flash_pkg_version);
+			/* Set the EC as the only updatable component */
+			if (g_strcmp0 (component_name, EC_DESC) == 0) {
+				fu_device_add_flag (item->device,
+						    FU_DEVICE_FLAG_ALLOW_OFFLINE);
+				fu_device_set_version (item->device, "0.0.0.0");
+			}
+		}
+		else {
+			parse_flags = fu_provider_dell_get_version_format ();
+			fw_str = as_utils_version_from_uint32 (dock_info->components[i].fw_version,
+							       parse_flags);
+			fu_device_set_version (item->device, fw_str);
+			fu_device_add_flag (item->device,
+					    FU_DEVICE_FLAG_ALLOW_OFFLINE);
+		}
+		g_hash_table_insert (priv->devices, g_strdup (dock_key), item);
+
+		fu_provider_device_add (FU_PROVIDER (provider_dell), item->device);
+
 	}
-
-	/* Dock EC hasn't been updated yet */
-	if (dock_info->flash_pkg_version == 0x00ffffff)
-		dock_info->flash_pkg_version = 0;
-
-	/* FIXME, if Dock EC version is valid, need to actually create devices
-	 * for all of the child components (EC, PC's, CBL, etc) that can be
-	 * queried as a group to evaluate the updatability of the dock */
-
-	/* FIXME: use correct GUID's for TB15, WD15 docks as lookup */
-	dock_guid = as_utils_guid_from_string (dock_type);
-	dock_key = fu_provider_dell_get_dock_key (device, dock_guid);
-	item = g_hash_table_lookup (priv->devices, dock_key);
-	if (item != NULL) {
-		g_debug ("Dell: Item %s is already registered.", dock_key);
-		return;
-	}
-
-	item = g_new0 (FuProviderDellDockItem, 1);
-	item->provider_dell = g_object_ref (provider_dell);
-	item->usb_device = g_object_ref (device);
-	item->device = fu_device_new();
-	dock_id = g_strdup_printf ("DELL-%s" G_GUINT64_FORMAT, dock_guid);
-	dock_name = g_strdup_printf ("Dell %s dock", dock_type);
-	fu_device_set_id (item->device, dock_id);
-	fu_device_set_name (item->device, dock_name);
-	fu_device_add_guid (item->device, dock_guid);
-	fu_device_add_flag(item->device, FU_DEVICE_FLAG_REQUIRE_AC);
-	/* FIXME: add support for marking offline update on this */
-	parse_flags = fu_provider_dell_get_version_format ();
-	fw_version_str = as_utils_version_from_uint32 (dock_info->flash_pkg_version,
-						       parse_flags);
-	fu_device_set_version (item->device, fw_version_str);
-	g_hash_table_insert (priv->devices, g_strdup (dock_key), item);
-
-	fu_provider_device_add (FU_PROVIDER (provider_dell), item->device);
 
 	/* FIXME: g_autoptr on the smi object */
 	dell_smi_obj_free (smi);
-
 }
 
 /**
@@ -386,11 +441,16 @@ fu_provider_dell_device_removed_cb (GUsbContext *ctx,
 	FuProviderDellPrivate *priv = GET_PRIVATE (provider_dell);
 	FuProviderDellDockItem *item;
 	g_autofree gchar *dock_key = NULL;
-	const gchar *supported_docks[] = {"TB15", "WD15", NULL};
-	const gchar *dock_guid;
+	const efi_guid_t guids[] = { WD15_EC_GUID, TB15_EC_GUID, TB15_PC2_GUID,
+				     TB15_PC1_GUID, WD15_PC1_GUID,
+				     LEGACY_CBL_GUID, OTHER_CBL_GUID,
+				     TBT_CBL_GUID};
+	const efi_guid_t *guid_raw;
 	guint16 pid;
 	guint16 vid;
 	guint i;
+
+	g_autofree gchar *guid_str = NULL;
 
 	vid = g_usb_device_get_vid (device);
 	pid = g_usb_device_get_pid (device);
@@ -399,19 +459,19 @@ fu_provider_dell_device_removed_cb (GUsbContext *ctx,
 	if (!(vid == 0x0bda && pid == 0x8153))
 		return;
 
-	/* already in database? */
-	for (i = 0; supported_docks[i] != NULL; i++) {
-		dock_guid = as_utils_guid_from_string (supported_docks[i]);
-		dock_key = fu_provider_dell_get_dock_key (device, dock_guid);
+	/* remove any components already in database? */
+	for (i = 0; i < G_N_ELEMENTS(guids); i++) {
+		guid_raw = &guids[i];
+		guid_str = g_strdup ("00000000-0000-0000-0000-000000000000");
+		efi_guid_to_str (guid_raw, &guid_str);
+		dock_key = fu_provider_dell_get_dock_key (device, guid_str);
 		item = g_hash_table_lookup (priv->devices, dock_key);
-		if (item)
-			break;
+		if (item) {
+			fu_provider_device_remove (FU_PROVIDER (provider_dell),
+						   item->device);
+			g_hash_table_remove (priv->devices, dock_key);
+		}
 	}
-	if (item == NULL)
-		return;
-
-	fu_provider_device_remove (FU_PROVIDER (provider_dell), item->device);
-	g_hash_table_remove (priv->devices, dock_key);
 }
 
 /**
@@ -774,6 +834,10 @@ fu_provider_dell_update (FuProvider *provider,
 	const gchar *guidstr = NULL;
 	efi_guid_t guid;
 #endif
+
+	/* FIXME when any one dock component has been marked for update, unmark
+		the rest as updatable
+	 */
 
 	/* test the flash counter
 	 * - devices with 0 left at coldplug aren't allowed offline updates
