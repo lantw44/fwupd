@@ -48,6 +48,9 @@ typedef struct {
 	GUsbContext		*usb_ctx;
 	gboolean		fake_smbios;
 	guint32			fake_output[4];
+	guint16			fake_vid;
+	guint16			fake_pid;
+	guint8			*fake_buffer;
 } FuProviderDellPrivate;
 
 typedef struct {
@@ -103,7 +106,8 @@ fu_provider_dell_match_dock_component(const gchar *query_str,
  **/
 void
 fu_provider_dell_inject_fake_data (FuProviderDell *provider_dell,
-				   guint32 *output)
+				   guint32 *output, guint16 vid, guint16 pid,
+				   guint8 *buf)
 {
 	FuProviderDellPrivate *priv = GET_PRIVATE (provider_dell);
 	guint i;
@@ -112,6 +116,9 @@ fu_provider_dell_inject_fake_data (FuProviderDell *provider_dell,
 		return;
 	for (i = 0; i < 4; i++)
 		priv->fake_output[i] = output[i];
+	priv->fake_vid = vid;
+	priv->fake_pid = pid;
+	priv->fake_buffer = buf;
 }
 
 /**
@@ -248,17 +255,23 @@ fu_provider_dell_get_version_format (void)
  * fu_provider_dell_get_dock_key:
  **/
 static gchar *
-fu_provider_dell_get_dock_key (GUsbDevice *device, const gchar *guid)
+fu_provider_dell_get_dock_key (FuProviderDell *provider_dell,
+			       GUsbDevice *device, const gchar *guid)
 {
-	return g_strdup_printf ("%s_%s",
-				g_usb_device_get_platform_id (device),
-				guid);
+	FuProviderDellPrivate *priv = GET_PRIVATE (provider_dell);
+	const gchar* platform_id;
+
+	if (priv->fake_smbios)
+		platform_id = "fake";
+	else
+		platform_id = g_usb_device_get_platform_id (device);
+	return g_strdup_printf ("%s_%s", platform_id, guid);
 }
 
 /**
  * fu_provider_dell_device_added_cb:
  **/
-static void
+void
 fu_provider_dell_device_added_cb (GUsbContext *ctx,
 				  GUsbDevice *device,
 				  FuProviderDell *provider_dell)
@@ -274,7 +287,7 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 	INFO_UNION buf;
 	DOCK_INFO *dock_info;
 	guint buf_size;
-	struct dell_smi_obj *smi;
+	struct dell_smi_obj *smi = NULL;
 	gint result;
 	gint i;
 	guint32 location;
@@ -288,8 +301,14 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 
 	/* don't look up immediately if a dock is connected as that would
 	   mean a SMI on every USB device that showed up on the system */
-	vid = g_usb_device_get_vid (device);
-	pid = g_usb_device_get_pid (device);
+	if (!priv->fake_smbios) {
+		vid = g_usb_device_get_vid (device);
+		pid = g_usb_device_get_pid (device);
+	}
+	else {
+		vid = priv->fake_vid;
+		pid = priv->fake_pid;
+	}
 
 	/* we're going to match on the Realtek NIC in the dock */
 	if (!(vid == DOCK_NIC_VID && pid == DOCK_NIC_PID))
@@ -298,21 +317,26 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 		return;
 
 	/* look up more information on dock */
-	smi = dell_smi_factory (DELL_SMI_DEFAULTS);
-	if (!smi) {
-		g_debug ("Dell: failure initializing SMI");
-		return;
+	if (!priv->fake_smbios) {
+		smi = dell_smi_factory (DELL_SMI_DEFAULTS);
+		if (!smi) {
+			g_debug ("Dell: failure initializing SMI");
+			return;
+		}
+		dell_smi_obj_set_class (smi, DACI_DOCK_CLASS);
+		dell_smi_obj_set_select (smi, DACI_DOCK_SELECT);
+		dell_smi_obj_set_arg (smi, cbARG1, DACI_DOCK_ARG_INFO);
+		dell_smi_obj_set_arg (smi, cbARG2, location);
+		buf_size = sizeof(DOCK_INFO_RECORD);
+		buf.buf = dell_smi_obj_make_buffer_frombios_auto (smi, cbARG3, buf_size);
+		if (!buf.buf) {
+			g_debug ("Dell: failed to initialize buffer");
+			dell_smi_obj_free (smi);
+			return;
+		}
 	}
-	dell_smi_obj_set_class (smi, DACI_DOCK_CLASS);
-	dell_smi_obj_set_select (smi, DACI_DOCK_SELECT);
-	dell_smi_obj_set_arg (smi, cbARG1, DACI_DOCK_ARG_INFO);
-	dell_smi_obj_set_arg (smi, cbARG2, location);
-	buf_size = sizeof(DOCK_INFO_RECORD);
-	buf.buf = dell_smi_obj_make_buffer_frombios_auto (smi, cbARG3, buf_size);
-	if (!buf.buf) {
-		g_debug ("Dell: failed to initialize buffer");
-		dell_smi_obj_free (smi);
-		return;
+	else {
+		buf.buf = priv->fake_buffer;
 	}
 	if (!fu_provider_dell_execute_smi (provider_dell, smi))
 		return;
@@ -353,6 +377,8 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 	g_debug ("Dell: dock description: %s", dock_info->dock_description);
 	/* Note: fw package version is deprecated, look at components instead */
 	g_debug ("Dell: dock flash pkg ver: 0x%x", dock_info->flash_pkg_version);
+	if (dock_info->flash_pkg_version == 0x00ffffff)
+		g_debug ("Dell: WARNING: dock flash package version invalid");
 	g_debug ("Dell: dock cable type: %d", dock_info->cable_type);
 	g_debug ("Dell: dock location: %d", dock_info->location);
 	g_debug ("Dell: dock component count: %d", dock_info->component_count);
@@ -379,7 +405,8 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 			g_debug ("Dell: Failed to convert GUID.");
 			return;
 		}
-		dock_key = fu_provider_dell_get_dock_key (device, guid_str);
+		dock_key = fu_provider_dell_get_dock_key (provider_dell, device,
+							  guid_str);
 		item = g_hash_table_lookup (priv->devices, dock_key);
 		if (item != NULL) {
 			g_debug ("Dell: Item %s is already registered.",
@@ -400,8 +427,6 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 
 		/* Dock EC hasn't been updated yet */
 		if (dock_info->flash_pkg_version == 0x00ffffff) {
-			g_debug ("Dell: dock flash package version %x invalid",
-				 dock_info->flash_pkg_version);
 			/* Set the EC as the only updatable component */
 			if (g_strcmp0 (component_name, EC_DESC) == 0) {
 				fu_device_add_flag (item->device,
@@ -430,7 +455,7 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 /**
  * fu_provider_dell_device_removed_cb:
  **/
-static void
+void
 fu_provider_dell_device_removed_cb (GUsbContext *ctx,
 				    GUsbDevice *device,
 				    FuProviderDell *provider_dell)
@@ -449,8 +474,14 @@ fu_provider_dell_device_removed_cb (GUsbContext *ctx,
 
 	g_autofree gchar *guid_str = NULL;
 
-	vid = g_usb_device_get_vid (device);
-	pid = g_usb_device_get_pid (device);
+	if (!priv->fake_smbios) {
+		vid = g_usb_device_get_vid (device);
+		pid = g_usb_device_get_pid (device);
+	}
+	else {
+		vid = priv->fake_vid;
+		pid = priv->fake_pid;
+	}
 
 	/* we're going to match on the Realtek NIC in the dock */
 	if (!(vid == DOCK_NIC_VID && pid == DOCK_NIC_PID))
@@ -461,7 +492,8 @@ fu_provider_dell_device_removed_cb (GUsbContext *ctx,
 		guid_raw = &guids[i];
 		guid_str = g_strdup ("00000000-0000-0000-0000-000000000000");
 		efi_guid_to_str (guid_raw, &guid_str);
-		dock_key = fu_provider_dell_get_dock_key (device, guid_str);
+		dock_key = fu_provider_dell_get_dock_key (provider_dell, device,
+							  guid_str);
 		item = g_hash_table_lookup (priv->devices, dock_key);
 		if (item) {
 			fu_provider_device_remove (FU_PROVIDER (provider_dell),
@@ -833,7 +865,7 @@ fu_provider_dell_update (FuProvider *provider,
 #endif
 
 	/* FIXME when any one dock component has been marked for update, unmark
-		the rest as updatable
+	 *	 the rest as updatable
 	 */
 
 	/* test the flash counter

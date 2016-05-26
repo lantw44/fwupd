@@ -24,6 +24,7 @@
 
 #include <glib-object.h>
 #include <efivar.h>
+#include <gusb.h>
 #include "fu-device.h"
 #include "fu-provider.h"
 
@@ -38,10 +39,22 @@ struct _FuProviderDellClass
 };
 
 FuProvider	*fu_provider_dell_new		(void);
-void		fu_provider_dell_inject_fake_data (FuProviderDell *provider_dell,
-						   guint32 *output);
+void
+fu_provider_dell_inject_fake_data (FuProviderDell *provider_dell,
+				   guint32 *output, guint16 vid, guint16 pid,
+				   guint8 *buf);
 gboolean
 fu_provider_dell_detect_tpm (FuProvider *provider, GError **error);
+
+void
+fu_provider_dell_device_added_cb (GUsbContext *ctx,
+				  GUsbDevice *device,
+				  FuProviderDell *provider_dell);
+
+void
+fu_provider_dell_device_removed_cb (GUsbContext *ctx,
+				    GUsbDevice *device,
+				    FuProviderDell *provider_dell);
 
 G_END_DECLS
 
@@ -115,7 +128,7 @@ typedef struct _COMPONENTS {
 } COMPONENTS;
 
 typedef struct _DOCK_INFO {
-	guint8		dock_description[80];
+	gchar		dock_description[80];
 	guint32		flash_pkg_version;	/* BCD format: 0x00XXYYZZ */
 	guint32		cable_type;		/* bit0-7 cable type, bit7-31 set to 0 */
 	guint8		location;		/* Location of the dock */
