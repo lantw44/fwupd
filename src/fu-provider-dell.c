@@ -292,7 +292,7 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 	pid = g_usb_device_get_pid (device);
 
 	/* we're going to match on the Realtek NIC in the dock */
-	if (!(vid == 0x0bda && pid == 0x8153))
+	if (!(vid == DOCK_NIC_VID && pid == DOCK_NIC_PID))
 		return;
 	if (!fu_provider_dell_detect_dock (provider_dell, &location))
 		return;
@@ -453,7 +453,7 @@ fu_provider_dell_device_removed_cb (GUsbContext *ctx,
 	pid = g_usb_device_get_pid (device);
 
 	/* we're going to match on the Realtek NIC in the dock */
-	if (!(vid == 0x0bda && pid == 0x8153))
+	if (!(vid == DOCK_NIC_VID && pid == DOCK_NIC_PID))
 		return;
 
 	/* remove any components already in database? */

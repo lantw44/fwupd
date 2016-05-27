@@ -161,6 +161,9 @@ typedef enum _CABLE_TYPE
 #define DACI_DOCK_ARG_COUNT		0
 #define DACI_DOCK_ARG_INFO		1
 
+#define DOCK_NIC_VID		0x0bda
+#define DOCK_NIC_PID		0x8153
+
 /* These are for matching the components */
 #define WD15_EC_STR		"2 0 2 2 0"
 #define TB15_EC_STR		"2 0 2 1 0"
