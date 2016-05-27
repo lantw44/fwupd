@@ -53,7 +53,6 @@ typedef struct {
 typedef struct {
 	FuDevice		*device;
 	FuProviderDell		*provider_dell;
-	GUsbDevice		*usb_device;
 } FuProviderDellDockItem;
 
 G_DEFINE_TYPE_WITH_PRIVATE (FuProviderDell, fu_provider_dell, FU_TYPE_PROVIDER)
@@ -220,7 +219,6 @@ fu_provider_dell_device_free (FuProviderDellDockItem *item)
 {
 	g_object_unref (item->device);
 	g_object_unref (item->provider_dell);
-	g_object_unref (item->usb_device);
 }
 
 /**
@@ -391,7 +389,6 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 
 		item = g_new0 (FuProviderDellDockItem, 1);
 		item->provider_dell = g_object_ref (provider_dell);
-		item->usb_device = g_object_ref (device);
 		item->device = fu_device_new();
 		dock_id = g_strdup_printf ("DELL-%s" G_GUINT64_FORMAT, guid_str);
 		dock_name = g_strdup_printf ("Dell %s %s", dock_type,
