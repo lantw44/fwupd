@@ -507,7 +507,7 @@ fu_provider_dell_dock_func (void)
 	fu_provider_dell_device_added_cb (NULL, NULL, FU_PROVIDER_DELL(provider));
 	g_assert (device == NULL);
 
-	/* inject valid TB15 dock w/ invalid EC version */
+	/* inject valid TB15 dock w/ invalid flash pkg version */
 	buf.record = g_malloc0(sizeof(DOCK_INFO_RECORD));
 	dock_info = &buf.record->dock_info;
 	buf.record->dock_info_header.dir_version = 1;
@@ -544,7 +544,45 @@ fu_provider_dell_dock_func (void)
 	fu_provider_dell_device_removed_cb (NULL, NULL,
 					    FU_PROVIDER_DELL(provider));
 
-	/* inject valid WD15 dock w/ invalid EC version */
+	/* inject valid TB15 dock w/ older system EC */
+	buf.record = g_malloc0(sizeof(DOCK_INFO_RECORD));
+	dock_info = &buf.record->dock_info;
+	buf.record->dock_info_header.dir_version = 1;
+	buf.record->dock_info_header.dock_type = DOCK_TYPE_TB15;
+	memcpy (dock_info->dock_description,
+		"BME_Dock", 8);
+	dock_info->flash_pkg_version = 0x43;
+	dock_info->cable_type = CABLE_TYPE_TBT;
+	dock_info->location = 2;
+	dock_info->component_count = 4;
+	dock_info->components[0].fw_version = 0xffffffff;
+	memcpy (dock_info->components[0].description,
+		"Dock1,EC,MIPS32,BME_Dock,0 :Query 2 0 2 1 0", 43);
+	dock_info->components[1].fw_version = 0x10211;
+	memcpy (dock_info->components[1].description,
+		"Dock1,PC,TI,BME_Dock,0 :Query 2 1 0 1 0", 39);
+	dock_info->components[2].fw_version = 0x10212;
+	memcpy (dock_info->components[2].description,
+		"Dock1,PC,TI,BME_Dock,1 :Query 2 1 0 1 1", 39);
+	dock_info->components[3].fw_version = 0xffffffff;
+	memcpy (dock_info->components[3].description,
+		"Dock1,Cable,Cyp,TBT_Cable,0 :Query 2 2 2 3 0", 44);
+	out[0] = 0;
+	out[1] = 1;
+	fu_provider_dell_inject_fake_data (FU_PROVIDER_DELL(provider),
+					   (guint32 *) &out,
+					   DOCK_NIC_VID, DOCK_NIC_PID,
+					   buf.buf);
+	fu_provider_dell_device_added_cb (NULL, NULL,
+					  FU_PROVIDER_DELL(provider));
+	g_assert (device != NULL);
+	device = NULL;
+	g_free (buf.record);
+	fu_provider_dell_device_removed_cb (NULL, NULL,
+					    FU_PROVIDER_DELL(provider));
+
+
+	/* inject valid WD15 dock w/ invalid flash pkg version */
 	buf.record = g_malloc0(sizeof(DOCK_INFO_RECORD));
 	dock_info = &buf.record->dock_info;
 	buf.record->dock_info_header.dir_version = 1;
@@ -562,6 +600,41 @@ fu_provider_dell_dock_func (void)
 	memcpy (dock_info->components[1].description,
 		"Dock1,PC,TI,IE_Dock,0 :Query 2 1 0 2 0", 38);
 	dock_info->components[2].fw_version = 0x00ffffff;
+	memcpy (dock_info->components[2].description,
+		"Dock1,Cable,Cyp,IE_Cable,0 :Query 2 2 2 1 0", 43);
+	out[0] = 0;
+	out[1] = 1;
+	fu_provider_dell_inject_fake_data (FU_PROVIDER_DELL(provider),
+					   (guint32 *) &out,
+					   DOCK_NIC_VID, DOCK_NIC_PID,
+					   buf.buf);
+	fu_provider_dell_device_added_cb (NULL, NULL,
+					  FU_PROVIDER_DELL(provider));
+	g_assert (device != NULL);
+	device = NULL;
+	g_free (buf.record);
+	fu_provider_dell_device_removed_cb (NULL, NULL,
+					    FU_PROVIDER_DELL(provider));
+
+
+	/* inject valid WD15 dock w/ older system EC */
+	buf.record = g_malloc0(sizeof(DOCK_INFO_RECORD));
+	dock_info = &buf.record->dock_info;
+	buf.record->dock_info_header.dir_version = 1;
+	buf.record->dock_info_header.dock_type = DOCK_TYPE_WD15;
+	memcpy (dock_info->dock_description,
+		"IE_Dock", 7);
+	dock_info->flash_pkg_version = 0x43;
+	dock_info->cable_type = CABLE_TYPE_LEGACY;
+	dock_info->location = 2;
+	dock_info->component_count = 3;
+	dock_info->components[0].fw_version = 0xffffffff;
+	memcpy (dock_info->components[0].description,
+		"Dock1,EC,MIPS32,IE_Dock,0 :Query 2 0 2 2 0", 42);
+	dock_info->components[1].fw_version = 0x10108;
+	memcpy (dock_info->components[1].description,
+		"Dock1,PC,TI,IE_Dock,0 :Query 2 1 0 2 0", 38);
+	dock_info->components[2].fw_version = 0xffffffff;
 	memcpy (dock_info->components[2].description,
 		"Dock1,Cable,Cyp,IE_Cable,0 :Query 2 2 2 1 0", 43);
 	out[0] = 0;
