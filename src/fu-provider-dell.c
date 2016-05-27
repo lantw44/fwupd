@@ -975,6 +975,53 @@ fu_provider_dell_update (FuProvider *provider,
 			     strerror (rc));
 		return FALSE;
 	}
+
+	/* TODO: add support for AR (dock/cable) and MST flash.
+	 * This is dependent upon OS interfaces for flashing these components.
+	 *
+	 * When available, we'll need to create special devices for those
+	 * parts of the payload (they're not part of DACI calls)
+	 *
+	 * Pseudo code for putting the dock in the mode to accept AR/MST follows
+	input[0] = DACI_DOCK_ARG_MODE;
+	input[1] = dock_location;
+	input[2] = DACI_DOCK_ARG_MODE_FLASH;
+	if (!fu_provider_dell_execute_simple_smi (provider_dell,
+						  DACI_DOCK_CLASS,
+						  DACI_DOCK_SELECT,
+						  input,
+						  output))
+		return FALSE;
+	if (output[1] != 0) {
+		g_set_error (error,
+			     FWUPD_ERROR,
+			     FWUPD_ERROR_NOT_SUPPORTED,
+			     "Dell: Failed to set dock flash mode: %d",
+			     output[1]);
+		return FALSE;
+	}
+
+	do the update
+
+	input[0] = DACI_DOCK_ARG_MODE;
+	input[1] = dock_location;
+	input[2] = DACI_DOCK_ARG_MODE_USER;
+	if (!fu_provider_dell_execute_simple_smi (provider_dell,
+						  DACI_DOCK_CLASS,
+						  DACI_DOCK_SELECT,
+						  input,
+						  output))
+		return FALSE;
+	if (output[1] != 0) {
+		g_set_error (error,
+			     FWUPD_ERROR,
+			     FWUPD_ERROR_NOT_SUPPORTED,
+			     "Dell: failed to set dock user mode: %d",
+			     output[1]);
+		return FALSE;
+	}
+	 */
+
 	return TRUE;
 }
 

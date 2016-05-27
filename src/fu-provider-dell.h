@@ -173,6 +173,9 @@ typedef enum _CABLE_TYPE
 #define DACI_DOCK_SELECT		22
 #define DACI_DOCK_ARG_COUNT		0
 #define DACI_DOCK_ARG_INFO		1
+#define DACI_DOCK_ARG_MODE		2
+#define DACI_DOCK_ARG_MODE_USER		0
+#define DACI_DOCK_ARG_MODE_FLASH	1
 
 #define DOCK_NIC_VID		0x0bda
 #define DOCK_NIC_PID		0x8153
