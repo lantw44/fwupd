@@ -417,6 +417,19 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 			return;
 		}
 
+		/* dock EC hasn't been updated for first time */
+		if (dock_info->flash_pkg_version == 0x00ffffff) {
+			old_ec = TRUE;
+			dock_info->flash_pkg_version = 0;
+			continue;
+		}
+		/* if invalid version, don't mark device for updates */
+		else if (dock_info->components[i].fw_version == 0 ||
+			 dock_info->components[i].fw_version == 0xffffffff) {
+			old_ec = TRUE;
+			continue;
+		}
+
 		item = g_new0 (FuProviderDellDockItem, 1);
 		item->provider_dell = g_object_ref (provider_dell);
 		item->device = fu_device_new();
@@ -427,25 +440,11 @@ fu_provider_dell_device_added_cb (GUsbContext *ctx,
 		fu_device_set_name (item->device, dock_name);
 		fu_device_add_guid (item->device, guid_str);
 		fu_device_add_flag(item->device, FU_DEVICE_FLAG_REQUIRE_AC);
+		fw_str = as_utils_version_from_uint32 (dock_info->components[i].fw_version,
+						       parse_flags);
+		fu_device_set_version (item->device, fw_str);
+		fu_device_add_flag (item->device, FU_DEVICE_FLAG_ALLOW_OFFLINE);
 
-		/* dock EC hasn't been updated for first time */
-		if (dock_info->flash_pkg_version == 0x00ffffff) {
-			old_ec = TRUE;
-			dock_info->flash_pkg_version = 0;
-		}
-		else {
-			/* if invalid version, don't mark device for updates */
-			if (dock_info->components[i].fw_version == 0 ||
-			    dock_info->components[i].fw_version == 0xffffffff)
-			    old_ec = TRUE;
-			else {
-				fw_str = as_utils_version_from_uint32 (dock_info->components[i].fw_version,
-								       parse_flags);
-				fu_device_set_version (item->device, fw_str);
-				fu_device_add_flag (item->device,
-						    FU_DEVICE_FLAG_ALLOW_OFFLINE);
-			}
-		}
 		g_hash_table_insert (priv->devices, g_strdup (dock_key), item);
 		fu_provider_device_add (FU_PROVIDER (provider_dell), item->device);
 
